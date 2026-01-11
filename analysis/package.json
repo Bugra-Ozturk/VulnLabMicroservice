@@ -1,0 +1,9 @@
+{
+    "name": "vuln-analysis",
+    "version": "1.0.0",
+    "description": "Graph analysis tools for hub detection",
+    "scripts": {
+        "analyze": "node graph-analysis.js"
+    },
+    "dependencies": {}
+}

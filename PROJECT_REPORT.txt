@@ -1,0 +1,123 @@
+PROJECT REPORT: VULNERABLE MICROSERVICE HUB DEMONSTRATION
+
+1. EXECUTIVE SUMMARY
+
+This project, titled "Vulnerable Microservice Hub Demonstration," was developed to illustrate the critical security risks associated with "Hub" components within a scale-free microservice architecture. By intentionally designing a system with high-degree central nodes (Hubs) lacking standard reliability patterns, we successfully demonstrated how targeted attacks on these focal points can lead to catastrophic system-wide failures. The project implements a functional microservice ecosystem using Node.js and Docker, featuring an API Gateway and a Message Broker (RabbitMQ) as primary hubs. Through custom attack simulation scripts, we verified that a lack of rate limiting, connection pooling, and circuit breakers transforms these hubs into Single Points of Failure (SPoF), validating theoretical concepts from network science regarding the fragility of scale-free networks.
+
+2. INTRODUCTION AND OBJECTIVE
+
+Modern software architectures, particularly microservices, naturally evolve into complex networks of dependencies. Network science suggests that these evolving networks often exhibit "scale-free" properties, characterized by a power-law degree distribution. In such networks, a small number of nodes (Hubs) possess a disproportionately high number of connections compared to the rest of the system.
+
+The primary objective of this project is to bridge the gap between abstract graph theory and practical software engineering. We aimed to build a tangible, working proof-of-concept that demonstrates:
+1. How hubs naturally emerge in microservice designs (e.g., API Gateways).
+2. Why these hubs are statistically significant targets for attackers.
+3. The specific mechanisms (resource exhaustion, cascading failure) by which hub failures propagate.
+
+3. THEORETICAL FRAMEWORK
+
+The project relies on two core concepts from graph theory:
+
+3.1 Scale-Free Networks
+A scale-free network is a network whose degree distribution follows a power law. This means that while most nodes have very few connections, a few select nodes (Hubs) have a massive number of connections. This structure makes the network robust against random failures (since random failures likely hit unimportant nodes) but extremely fragile against targeted attacks on hubs.
+
+3.2 Degree Centrality and Hubs
+In our architectural graph, "Degree" refers to the number of dependencies a service has (incoming and outgoing). Components with high degree centrality act as the nervous center of the system. If a hub is compromised or overwhelmed, the connectivity of the entire graph disintegrates.
+
+4. SYSTEM ARCHITECTURE
+
+The developed application simulates a typical e-commerce backend with the following components:
+
+4.1 API Gateway (The Primary Hub)
+The API Gateway acts as the entry point for all external client requests. It mediates traffic to internal services. In our graph analysis, this component has the highest degree centrality because every client connects to it, and it connects to every downstream service.
+
+4.2 RabbitMQ (The Infrastructure Hub)
+An asynchronous message broker used for decoupling services. It serves as a secondary hub. Services publish events (e.g., "User Created", "Order Placed") to it, and worker services consume from it.
+
+4.3 Downstream Microservices
+- Auth Service: Manages user authentication.
+- Order Service: Handles order creation.
+- User Service: Manages user data.
+These services are "spoke" nodes with low degree centrality, dependent entirely on the Gateway for incoming traffic.
+
+4.4 Event Processor
+A background worker that consumes messages from RabbitMQ, simulating asynchronous processing tasks.
+
+5. IMPLEMENTATION DETAILS
+
+The system was built using the following technology stack:
+- Runtime: Node.js
+- Framework: Express.js
+- Containerization: Docker and Docker Compose
+- Messaging: RabbitMQ (AMQP)
+- Analysis Tools: Custom Node.js scripts using Axios for network requests.
+
+5.1 Intentional Vulnerabilities
+To demonstrate the risks effectively, we implemented specific anti-patterns often found in immature or poorly configured systems:
+
+A. Vulnerability: Absence of Rate Limiting
+Location: API Gateway
+Detail: The Gateway accepts an unlimited number of requests per second. There is no throttling mechanism (e.g., Token Bucket algorithm) to reject traffic spikes.
+
+B. Vulnerability: Improper Connection Management (No Pooling)
+Location: API Gateway -> RabbitMQ Interface
+Detail: For every single incoming HTTP request that requires event publishing, the Gateway opens a new TCP connection to RabbitMQ instead of reusing an existing connection from a pool. Crucially, these connections are not closed immediately or efficiently, leading to rapid resource exhaustion.
+
+C. Vulnerability: Lack of Circuit Breakers
+Location: API Gateway
+Detail: When a downstream service (or RabbitMQ) becomes slow or unresponsive, the Gateway waits indefinitely (or for a very long default timeout) rather than failing fast. This ties up Gateway resources (threads/connection descriptors), causing the failure to cascade up to the client.
+
+D. Vulnerability: Bottleneck Consumer
+Location: Event Processor
+Detail: A single consumer processes events with an artificial delay, demonstrating how a hub (the queue) can fill up rapidly if consumption rate does not match production rate, leading to memory pressure on the broker.
+
+6. ATTACK SCENARIOS AND DEMONSTRATION
+
+Two primary scenarios were developed to validate the vulnerabilities.
+
+6.1 Scenario A: Denial of Service (DoS) via Resource Exhaustion
+Tool: attack/dos-attack.js
+Methodology: The script spawns multiple concurrent worker threads (default: 100) that continuously send requests to the Gateway.
+Observation:
+- The Gateway attempts to open hundreds of new connections to RabbitMQ per second.
+- The RabbitMQ server's connection limit is breached.
+- The Gateway's memory usage spikes as it holds onto open request handles.
+- Within seconds, the Gateway becomes unresponsive. Legitimate requests fail because the "Hub" is dead, creating a total system blackout.
+
+6.2 Scenario B: Cascading Failure
+Tool: attack/cascade-test.js
+Methodology: We simulate a failure of the RabbitMQ service (stopping the container) while the Gateway is under load.
+Observation:
+- The Gateway tries to connect to the stopped RabbitMQ instance.
+- Without a Circuit Breaker pattern, these connection attempts hang until a timeout occurs.
+- These pending requests consume the Gateway's available execution slots.
+- Consequently, unrelated endpoints (e.g., GET /users, which does not strictly need RabbitMQ) also begin to fail or time out because the Gateway itself is "clogged."
+- This proves that a failure in one hub component (RabbitMQ) cascades to destroy the availability of the Primary Hub (Gateway).
+
+7. ANALYSIS RESULTS
+
+7.1 Graph Analysis
+We developed a custom tool (analysis/graph-analysis.js) to programmatically analyze the architecture.
+Findings:
+- API Gateway Degree: 7 (Highest - Critical Hub)
+- RabbitMQ Degree: 4 (High - Critical Infrastructure)
+- Order/Auth/User Service Degrees: 2 (Low - Spokes)
+Conclusion: The network follows a scale-free topology. The API Gateway is identified as the single most critical point of failure.
+
+7.2 Vulnerability Metrics
+Using the Real-time Monitor (monitor/health-check.js), we observed:
+- Upon attack, establishing connections happened linearly until the limit was hit.
+- Determining the "Time to Failure" was almost instantaneous (under 5 seconds) with 100 concurrent users due to the lack of connection pooling.
+
+8. MITIGATION STRATEGIES
+
+To secure this architecture against the demonstrated threats, the following engineering practices are recommended:
+
+1. Rate Limiting: Implement algorithms (like Leaky Bucket) at the Gateway level to drop excess traffic before it consumes resources.
+2. Connection Pooling: Maintain a persistent pool of connections to downstream services and message brokers. Reuse connections rather than creating new ones per request.
+3. Circuit Breakers: Wrap external calls in a circuit breaker. If a service fails repeatedly, "open" the circuit to fail fast immediately, preserving Gateway resources for other healthy services.
+4. Bulkhead Pattern: Isolate resources so that a failure in one part of the system (e.g., Auth) does not consume all resources of the Gateway, allowing other routes (e.g., Products) to function.
+5. Horizontal Scaling: Deploy multiple instances of the Gateway behind a Load Balancer to reduce the centrality of a single node.
+
+9. CONCLUSION
+
+This project successfully modeled and demonstrated the inherent fragility of Hub components in a microservice architecture. By stripping away standard reliability protections, we exposed how quickly a system can collapse when its central nodes are targeted. The results confirm that while scale-free networks offer efficiency, they require rigorous defensive programming patterns at their hubs to ensure resilience and availability. The "Vulnerable Microservice Hub" stands as a practical educational tool for understanding the intersection of Network Science and Software Security.

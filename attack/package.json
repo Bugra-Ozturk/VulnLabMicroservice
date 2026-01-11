@@ -1,0 +1,12 @@
+{
+    "name": "vuln-attack-tools",
+    "version": "1.0.0",
+    "description": "Attack simulation and monitoring tools",
+    "scripts": {
+        "attack": "node dos-attack.js",
+        "cascade": "node cascade-test.js"
+    },
+    "dependencies": {
+        "axios": "^1.6.2"
+    }
+}

@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # RabbitMQ - Secondary Hub (Event Processor)
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: vuln-rabbitmq
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vuln-network
+
+  # API Gateway - Primary Hub (VULNERABLE - Single Point of Failure)
+  gateway:
+    build: ./gateway
+    container_name: vuln-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - ORDER_SERVICE_URL=http://order-service:3002
+      - USER_SERVICE_URL=http://user-service:3003
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    # VULNERABILITY: No resource limits!
+    # mem_limit: 512m  # Intentionally commented out
+    networks:
+      - vuln-network
+
+  # Auth Service
+  auth-service:
+    build: ./services/auth-service
+    container_name: vuln-auth-service
+    environment:
+      - NODE_ENV=development
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - vuln-network
+
+  # Order Service
+  order-service:
+    build: ./services/order-service
+    container_name: vuln-order-service
+    environment:
+      - NODE_ENV=development
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - vuln-network
+
+  # User Service
+  user-service:
+    build: ./services/user-service
+    container_name: vuln-user-service
+    environment:
+      - NODE_ENV=development
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - vuln-network
+
+  # Event Processor (Worker)
+  event-processor:
+    build: ./services/event-processor
+    container_name: vuln-event-processor
+    environment:
+      - NODE_ENV=development
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - vuln-network
+
+networks:
+  vuln-network:
+    driver: bridge

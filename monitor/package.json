@@ -1,0 +1,11 @@
+{
+    "name": "vuln-monitor",
+    "version": "1.0.0",
+    "description": "Monitoring tools for vulnerability demonstration",
+    "scripts": {
+        "start": "node health-check.js"
+    },
+    "dependencies": {
+        "axios": "^1.6.2"
+    }
+}
