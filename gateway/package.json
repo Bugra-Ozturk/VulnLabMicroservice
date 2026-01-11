@@ -9,6 +9,8 @@
   "dependencies": {
     "express": "^4.18.2",
     "amqplib": "^0.10.3",
-    "axios": "^1.6.2"
+    "axios": "^1.6.2",
+    "express-rate-limit": "^7.1.5",
+    "opossum": "^8.1.0"
   }
 }
